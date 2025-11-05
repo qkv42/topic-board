@@ -1,16 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import Board from './components/Board'
-import {
-    pb,
-    NOTES_COLLECTION,
-    getNotes,
-    createNote,
-    updateNote as updateNoteAPI,
-    deleteNote as deleteNoteAPI,
-    subscribeToNotes,
-    recordToNote
-} from './services/pocketbase'
-import type { NoteRecord } from './services/pocketbase'
+import { 
+  getNotes, 
+  createNote, 
+  updateNote as updateNoteAPI, 
+  deleteNote as deleteNoteAPI,
+  subscribeToNotes
+} from './services/firebase'
 import './App.css'
 
 export interface Comment {
@@ -46,28 +42,8 @@ function App() {
     const [notes, setNotes] = useState<StickyNote[]>([])
     const [userName, setUserName] = useState<string>('')
     const [showNameInput, setShowNameInput] = useState(true)
-    const [isConnected, setIsConnected] = useState(false)
+    // Firebase je vždy připojený - není potřeba kontrolovat stav
     const isUpdatingFromServer = useRef(false)
-
-    // Kontrola připojení k PocketBase
-    useEffect(() => {
-        const checkConnection = async () => {
-            try {
-                // Zkusíme jednoduchý request na API
-                await pb.collection(NOTES_COLLECTION).getList(1, 1)
-                setIsConnected(true)
-            } catch (error) {
-                setIsConnected(false)
-                console.warn('Nelze se připojit k PocketBase:', error)
-                console.warn('Ujistěte se, že PocketBase běží na', import.meta.env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090')
-            }
-        }
-
-        checkConnection()
-        const interval = setInterval(checkConnection, 5000) // Kontrola každých 5 sekund
-
-        return () => clearInterval(interval)
-    }, [])
 
     // Načtení jména z localStorage
     useEffect(() => {
@@ -87,54 +63,18 @@ function App() {
         }
     }
 
-    // Načtení notes při startu
-    useEffect(() => {
-        const loadNotes = async () => {
-            try {
-                const loadedNotes = await getNotes()
-                isUpdatingFromServer.current = true
-                setNotes(loadedNotes)
-                isUpdatingFromServer.current = false
-            } catch (error) {
-                console.error('Chyba při načítání notes:', error)
-            }
-        }
-
-        if (!showNameInput) {
-            loadNotes()
-        }
-    }, [showNameInput])
-
-    // Real-time subscription pro změny od ostatních uživatelů
+    // Real-time subscription pro změny
     useEffect(() => {
         if (showNameInput) return
 
-        const unsubscribe = subscribeToNotes((action, record) => {
+        const unsubscribe = subscribeToNotes((notes) => {
             isUpdatingFromServer.current = true
-
-            if (action === 'create' || action === 'update') {
-                const note = recordToNote(record as NoteRecord)
-                setNotes(prevNotes => {
-                    const existingIndex = prevNotes.findIndex(n => n.id === note.id)
-                    if (existingIndex >= 0) {
-                        // Update existing
-                        const updated = [...prevNotes]
-                        updated[existingIndex] = note
-                        return updated
-                    } else {
-                        // Add new
-                        return [...prevNotes, note]
-                    }
-                })
-            } else if (action === 'delete') {
-                setNotes(prevNotes => prevNotes.filter(n => n.id !== record.id))
-            }
-
+            setNotes(notes)
             isUpdatingFromServer.current = false
         })
 
         return () => {
-            unsubscribe.then(unsub => unsub())
+            unsubscribe()
         }
     }, [showNameInput])
 
@@ -156,7 +96,7 @@ function App() {
             setNotes(prev => [...prev, created])
         } catch (error) {
             console.error('Chyba při vytváření note:', error)
-            alert(`Chyba při vytváření poznámky. Zkontrolujte, zda běží PocketBase server.\n\nChyba: ${error}`)
+            alert(`Chyba při vytváření poznámky. Zkontrolujte Firebase konfiguraci.\n\nChyba: ${error}`)
         }
     }
 
@@ -172,10 +112,10 @@ function App() {
 
         try {
             await updateNoteAPI(id, updates)
-            // Real-time subscription automaticky aktualizuje, ale lokální změna je už provedena
+            // Real-time subscription automaticky aktualizuje
         } catch (error) {
             console.error('Chyba při aktualizaci note:', error)
-            // Pokud selže, načteme znovu z serveru
+            // Pokud selže, načteme znovu z Firestore
             const loadedNotes = await getNotes()
             setNotes(loadedNotes)
         }
@@ -192,7 +132,7 @@ function App() {
             // Real-time subscription automaticky smaže
         } catch (error) {
             console.error('Chyba při mazání note:', error)
-            // Pokud selže, načteme znovu z serveru
+            // Pokud selže, načteme znovu z Firestore
             const loadedNotes = await getNotes()
             setNotes(loadedNotes)
         }
@@ -266,12 +206,8 @@ function App() {
                 <div className="header-left">
                     <h1>📌 Topic Board</h1>
                     <div className="connection-status">
-                        {isConnected && (
-                            <>
-                                <span className="status-dot connected"></span>
-                                <span className="status-text">Připojeno</span>
-                            </>
-                        )}
+                        <span className="status-dot connected"></span>
+                        <span className="status-text">Připojeno</span>
                         {userName && (
                             <span className="user-name">👤 {userName}</span>
                         )}

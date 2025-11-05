@@ -11,8 +11,8 @@ Webová aplikace pro správu barevných sticky notes s možností komentování,
 - ✅ Editace textu notes
 - ✅ **Real-time synchronizace** - změny vidí všichni uživatelé okamžitě
 - ✅ **Spolupráce více uživatelů** - více lidí může pracovat současně
-- ✅ **PocketBase backend** - moderní backend s databází a real-time subscriptions
-- ✅ SQLite databáze - strukturované ukládání dat
+- ✅ **Firebase backend** - cloud databáze a real-time synchronizace
+- ✅ **Firestore** - NoSQL cloud databáze
 - ✅ Identifikace uživatelů (jméno)
 - ✅ Status připojení (připojeno/odpojeno)
 - ✅ Moderní a responzivní design
@@ -22,44 +22,43 @@ Webová aplikace pro správu barevných sticky notes s možností komentování,
 ### Předpoklady
 - Node.js (v18 nebo vyšší)
 - npm nebo yarn
-- PocketBase (viz [POCKETBASE_SETUP.md](./POCKETBASE_SETUP.md))
+- Firebase účet (zdarma) - [firebase.google.com](https://firebase.google.com/)
 
-### 1. Instalace PocketBase
+### 1. Nastavení Firebase
 
-**Důležité:** Nejprve musíte nastavit PocketBase! Podrobný návod najdete v [POCKETBASE_SETUP.md](./POCKETBASE_SETUP.md).
+**Důležité:** Nejprve musíte nastavit Firebase projekt! Podrobný návod najdete v [FIREBASE_SETUP.md](./FIREBASE_SETUP.md).
 
 Zkráceně:
-1. Stáhněte PocketBase z [pocketbase.io](https://pocketbase.io/docs/)
-2. Spusťte: `./pocketbase serve`
-3. Vytvořte kolekci `notes` v admin dashboardu (`http://127.0.0.1:8090/_/`)
+1. Vytvořte projekt na [Firebase Console](https://console.firebase.google.com/)
+2. Vytvořte Firestore Database (test mode)
+3. Získejte Firebase konfiguraci (Project Settings → Your apps → Web app)
 
-### 2. Instalace závislostí frontendu
+### 2. Konfigurace
+
+Vytvořte soubor `.env` v kořenovém adresáři projektu:
+
+```env
+VITE_FIREBASE_API_KEY=your-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
+```
+
+### 3. Instalace závislostí
 
 ```bash
 npm install
 ```
 
-### 3. Konfigurace
-
-Vytvořte soubor `.env` v kořenovém adresáři:
-
-```env
-VITE_POCKETBASE_URL=http://127.0.0.1:8090
-```
-
 ### 4. Spuštění aplikace
 
-**Terminál 1 - PocketBase:**
-```bash
-./pocketbase serve
-```
-
-**Terminál 2 - Frontend:**
 ```bash
 npm run dev
 ```
 
-Frontend poběží na `http://localhost:5173`
+Aplikace poběží na `http://localhost:5173`
 
 ### 5. Otevření aplikace
 
@@ -67,11 +66,12 @@ Otevřete `http://localhost:5173` v prohlížeči. Při prvním spuštění bude
 
 ### Spolupráce více uživatelů
 
-1. Spusťte PocketBase server (pokud ještě neběží)
-2. Pro spolupráci přes síť: Spusťte PocketBase s `--http=0.0.0.0:8090` a nastavte `VITE_POCKETBASE_URL` na IP adresu serveru
-3. Otevřete aplikaci v **více prohlížečích/oknech** (nebo na různých zařízeních)
-4. Zadejte různá jména v každém okně
-5. Všechny změny se synchronizují v reálném čase!
+1. **Všechno už běží v cloudu!** ✅
+2. Otevřete aplikaci v **více prohlížečích/oknech** (nebo na různých zařízeních)
+3. Zadejte různá jména v každém okně
+4. Všechny změny se synchronizují v reálném čase automaticky!
+
+**Pro nasazení na web:** Viz [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) - sekce "Nasazení na Firebase Hosting"
 
 ## 🛠️ Build pro produkci
 
@@ -96,14 +96,14 @@ Výsledek bude v adresáři `dist/`.
 - **React 18** - UI framework
 - **TypeScript** - Typování
 - **Vite** - Build tool a dev server
-- **PocketBase SDK** - Komunikace s backendem a real-time subscriptions
+- **Firebase SDK** - Komunikace s Firestore a real-time listeners
 - **CSS3** - Styling
 
 ### Backend
-- **PocketBase** - Open-source backend s databází
-- **SQLite** - Embedded databáze pro ukládání dat
-- **Real-time Subscriptions** - WebSocket komunikace pro synchronizaci
-- **REST API** - Automaticky generované API
+- **Firebase** - Google cloud platform
+- **Firestore** - NoSQL cloud databáze
+- **Real-time Listeners** - Automatická synchronizace změn
+- **Firebase Hosting** - Hosting frontendu (volitelné)
 
 ## 🔧 Konfigurace
 
@@ -111,12 +111,12 @@ Výsledek bude v adresáři `dist/`.
 
 **Frontend** (`.env`):
 ```env
-VITE_POCKETBASE_URL=http://127.0.0.1:8090
-```
-
-Pro spolupráci přes síť použijte IP adresu:
-```env
-VITE_POCKETBASE_URL=http://192.168.1.100:8090
+VITE_FIREBASE_API_KEY=your-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
 ```
 
 ## 📁 Struktura projektu
@@ -124,24 +124,24 @@ VITE_POCKETBASE_URL=http://192.168.1.100:8090
 ```
 topic-board/
 ├── src/                    # Frontend React aplikace
+│   ├── config/
+│   │   └── firebase.ts     # Firebase konfigurace
 │   ├── services/
-│   │   └── pocketbase.ts   # PocketBase service
+│   │   └── firebase.ts     # Firebase service
 │   └── ...
 ├── package.json            # Frontend dependencies
-├── POCKETBASE_SETUP.md     # Návod na nastavení PocketBase
+├── FIREBASE_SETUP.md       # Návod na nastavení Firebase
 └── README.md
 ```
 
-**Poznámka:** PocketBase je samostatný spustitelný soubor, který spouštíte zvlášť.
-
 ## 🔮 Možná budoucí vylepšení
 
-- [ ] ✅ Ukládání na server (PocketBase) - **Hotovo!**
+- [ ] ✅ Ukládání na server (Firebase) - **Hotovo!**
 - [ ] ✅ Real-time synchronizace - **Hotovo!**
 - [ ] ✅ Spolupráce více uživatelů - **Hotovo!**
-- [ ] ✅ SQLite databáze - **Hotovo!**
+- [ ] ✅ Cloud databáze (Firestore) - **Hotovo!**
 - [ ] Více boardů (sdílení konkrétních boardů)
-- [ ] Uživatelské účty a autentizace (PocketBase to podporuje!)
+- [ ] Uživatelské účty a autentizace (Firebase Authentication to podporuje!)
 - [ ] Kategorie/tagy pro notes
 - [ ] Vyhledávání notes
 - [ ] Export/import boards
@@ -150,6 +150,6 @@ topic-board/
 
 ## 📚 Dokumentace
 
-- [POCKETBASE_SETUP.md](./POCKETBASE_SETUP.md) - Podrobný návod na nastavení PocketBase
+- [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) - Podrobný návod na nastavení Firebase
 - [HOW_IT_WORKS.md](./HOW_IT_WORKS.md) - Technický popis fungování aplikace
 

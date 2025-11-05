@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { StickyNote as StickyNoteType, Comment } from '../App'
+import { StickyNote as StickyNoteType } from '../App'
 import './StickyNote.css'
 
 const COLORS = [

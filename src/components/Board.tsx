@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import StickyNote from './StickyNote'
 import { StickyNote as StickyNoteType } from '../App'
 import './Board.css'

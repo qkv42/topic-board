@@ -8,6 +8,7 @@ interface BoardProps {
     onDeleteNote: (id: string) => void
     onAddComment: (noteId: string, text: string) => void
     onDeleteComment: (noteId: string, commentId: string) => void
+    editingNoteIds: React.MutableRefObject<Set<string>>
 }
 
 export default function Board({
@@ -16,6 +17,7 @@ export default function Board({
     onDeleteNote,
     onAddComment,
     onDeleteComment,
+    editingNoteIds,
 }: BoardProps) {
     return (
         <div className="board">
@@ -27,6 +29,7 @@ export default function Board({
                     onDelete={onDeleteNote}
                     onAddComment={onAddComment}
                     onDeleteComment={onDeleteComment}
+                    editingNoteIds={editingNoteIds}
                 />
             ))}
         </div>

@@ -50,6 +50,7 @@ function App() {
     const [passwordError, setPasswordError] = useState<string>('')
     // Firebase je vždy připojený - není potřeba kontrolovat stav
     const isUpdatingFromServer = useRef(false)
+    const editingNoteIds = useRef<Set<string>>(new Set())
 
     // Načtení autentizace a jména z localStorage
     useEffect(() => {
@@ -70,12 +71,19 @@ function App() {
         e.preventDefault()
         setPasswordError('')
         
-        if (password === BOARD_PASSWORD) {
+        if (password.trim() === BOARD_PASSWORD) {
             setIsAuthenticated(true)
             localStorage.setItem('topic-board-authenticated', 'true')
         } else {
             setPasswordError('Nesprávné heslo. Zkuste to znovu.')
             setPassword('')
+        }
+    }
+
+    // Zabránit submiti formuláře při stisku Enter, pokud heslo není kompletní
+    const handlePasswordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' && password.trim().length < BOARD_PASSWORD.length) {
+            e.preventDefault()
         }
     }
 
@@ -101,9 +109,24 @@ function App() {
     useEffect(() => {
         if (showNameInput) return
 
-        const unsubscribe = subscribeToNotes((notes) => {
+        const unsubscribe = subscribeToNotes((newNotes) => {
             isUpdatingFromServer.current = true
-            setNotes(notes)
+            
+            // Ignorujeme updates pro poznámky, které jsou právě editované - zachováme všechny jejich vlastnosti
+            setNotes(prevNotes => {
+                const updatedNotes = newNotes.map(newNote => {
+                    // Pokud je poznámka právě editovaná, zachováme celou původní poznámku (ne jen text)
+                    if (editingNoteIds.current.has(newNote.id)) {
+                        const prevNote = prevNotes.find(n => n.id === newNote.id)
+                        if (prevNote) {
+                            return prevNote // Vrátíme celou původní poznámku, ne jen text
+                        }
+                    }
+                    return newNote
+                })
+                return updatedNotes
+            })
+            
             isUpdatingFromServer.current = false
         })
 
@@ -137,12 +160,15 @@ function App() {
     const updateNote = async (id: string, updates: Partial<StickyNote>) => {
         if (isUpdatingFromServer.current) return
 
-        // Optimistic update (lokální změna pro rychlost)
-        setNotes(prevNotes =>
-            prevNotes.map(note =>
-                note.id === id ? { ...note, ...updates } : note
+        // Optimistic update (lokální změna pro rychlost) - ale ne pro text, protože má vlastní lokální state
+        const hasTextUpdate = 'text' in updates
+        if (!hasTextUpdate) {
+            setNotes(prevNotes =>
+                prevNotes.map(note =>
+                    note.id === id ? { ...note, ...updates } : note
+                )
             )
-        )
+        }
 
         try {
             await updateNoteAPI(id, updates)
@@ -223,6 +249,7 @@ function App() {
                                     setPassword(e.target.value)
                                     setPasswordError('')
                                 }}
+                                onKeyDown={handlePasswordKeyDown}
                                 placeholder="Heslo..."
                                 className="name-input"
                                 autoFocus
@@ -298,6 +325,7 @@ function App() {
                 onDeleteNote={deleteNote}
                 onAddComment={addComment}
                 onDeleteComment={deleteComment}
+                editingNoteIds={editingNoteIds}
             />
         </div>
     )

@@ -140,6 +140,28 @@
     opacity: 0.6;
 }
 
+.password-error {
+    color: #f44336;
+    font-size: 0.875rem;
+    margin-top: -0.5rem;
+    text-align: left;
+}
+
+.logout-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    margin-left: 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.logout-btn:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
 .add-note-btn {
     background: #667eea;
     color: white;

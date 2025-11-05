@@ -38,21 +38,55 @@ const COLORS = [
     '#87CEEB', // světle modrá 2
 ]
 
+// Společné heslo pro přístup k boardu (z environment variable)
+const BOARD_PASSWORD = import.meta.env.VITE_BOARD_PASSWORD || ''
+
 function App() {
     const [notes, setNotes] = useState<StickyNote[]>([])
     const [userName, setUserName] = useState<string>('')
+    const [password, setPassword] = useState<string>('')
+    const [isAuthenticated, setIsAuthenticated] = useState(false)
     const [showNameInput, setShowNameInput] = useState(true)
+    const [passwordError, setPasswordError] = useState<string>('')
     // Firebase je vždy připojený - není potřeba kontrolovat stav
     const isUpdatingFromServer = useRef(false)
 
-    // Načtení jména z localStorage
+    // Načtení autentizace a jména z localStorage
     useEffect(() => {
+        const savedAuth = localStorage.getItem('topic-board-authenticated')
         const savedName = localStorage.getItem('topic-board-username')
-        if (savedName) {
-            setUserName(savedName)
-            setShowNameInput(false)
+        
+        if (savedAuth === 'true') {
+            setIsAuthenticated(true)
+            if (savedName) {
+                setUserName(savedName)
+                setShowNameInput(false)
+            }
         }
     }, [])
+
+    // Ověření hesla
+    const handlePasswordSubmit = (e: React.FormEvent) => {
+        e.preventDefault()
+        setPasswordError('')
+        
+        if (password === BOARD_PASSWORD) {
+            setIsAuthenticated(true)
+            localStorage.setItem('topic-board-authenticated', 'true')
+        } else {
+            setPasswordError('Nesprávné heslo. Zkuste to znovu.')
+            setPassword('')
+        }
+    }
+
+    // Odhlášení (vymaže autentizaci)
+    const handleLogout = () => {
+        setIsAuthenticated(false)
+        setShowNameInput(true)
+        setUserName('')
+        localStorage.removeItem('topic-board-authenticated')
+        localStorage.removeItem('topic-board-username')
+    }
 
     // Uložení jména
     const handleNameSubmit = (e: React.FormEvent) => {
@@ -173,6 +207,40 @@ function App() {
         await updateNote(noteId, updatedNote)
     }
 
+    // Password screen
+    if (!isAuthenticated) {
+        return (
+            <div className="app">
+                <div className="name-input-overlay">
+                    <div className="name-input-container">
+                        <h2>🔒 Topic Board</h2>
+                        <p>Pro přístup zadejte heslo:</p>
+                        <form onSubmit={handlePasswordSubmit}>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => {
+                                    setPassword(e.target.value)
+                                    setPasswordError('')
+                                }}
+                                placeholder="Heslo..."
+                                className="name-input"
+                                autoFocus
+                            />
+                            {passwordError && (
+                                <div className="password-error">{passwordError}</div>
+                            )}
+                            <button type="submit" className="name-submit-btn" disabled={!password.trim()}>
+                                Přihlásit
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    // Name input screen
     if (showNameInput) {
         return (
             <div className="app">
@@ -203,19 +271,26 @@ function App() {
     return (
         <div className="app">
             <header className="app-header">
-                <div className="header-left">
-                    <h1>📌 Topic Board</h1>
-                    <div className="connection-status">
-                        <span className="status-dot connected"></span>
-                        <span className="status-text">Připojeno</span>
-                        {userName && (
-                            <span className="user-name">👤 {userName}</span>
-                        )}
+                    <div className="header-left">
+                        <h1>📌 Topic Board</h1>
+                        <div className="connection-status">
+                            <span className="status-dot connected"></span>
+                            <span className="status-text">Připojeno</span>
+                            {userName && (
+                                <span className="user-name">👤 {userName}</span>
+                            )}
+                            <button 
+                                className="logout-btn" 
+                                onClick={handleLogout}
+                                title="Odhlásit se"
+                            >
+                                🚪
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <button className="add-note-btn" onClick={addNote}>
-                    + Přidat poznámku
-                </button>
+                    <button className="add-note-btn" onClick={addNote}>
+                        + Přidat poznámku
+                    </button>
             </header>
             <Board
                 notes={notes}

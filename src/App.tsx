@@ -1,0 +1,296 @@
+import { useState, useEffect, useRef } from 'react'
+import Board from './components/Board'
+import {
+    pb,
+    NOTES_COLLECTION,
+    getNotes,
+    createNote,
+    updateNote as updateNoteAPI,
+    deleteNote as deleteNoteAPI,
+    subscribeToNotes,
+    recordToNote
+} from './services/pocketbase'
+import type { NoteRecord } from './services/pocketbase'
+import './App.css'
+
+export interface Comment {
+    id: string
+    text: string
+    timestamp: number
+    authorName: string
+}
+
+export interface StickyNote {
+    id: string
+    text: string
+    color: string
+    x: number
+    y: number
+    comments: Comment[]
+    createdAt: number
+    authorName: string
+}
+
+const COLORS = [
+    '#FFE5B4', // světle žlutá
+    '#FFB6C1', // světle růžová
+    '#B0E0E6', // světle modrá
+    '#98FB98', // světle zelená
+    '#DDA0DD', // světle fialová
+    '#F0E68C', // khaki
+    '#FFA07A', // světle lososová
+    '#87CEEB', // světle modrá 2
+]
+
+function App() {
+    const [notes, setNotes] = useState<StickyNote[]>([])
+    const [userName, setUserName] = useState<string>('')
+    const [showNameInput, setShowNameInput] = useState(true)
+    const [isConnected, setIsConnected] = useState(false)
+    const isUpdatingFromServer = useRef(false)
+
+    // Kontrola připojení k PocketBase
+    useEffect(() => {
+        const checkConnection = async () => {
+            try {
+                // Zkusíme jednoduchý request na API
+                await pb.collection(NOTES_COLLECTION).getList(1, 1)
+                setIsConnected(true)
+            } catch (error) {
+                setIsConnected(false)
+                console.warn('Nelze se připojit k PocketBase:', error)
+                console.warn('Ujistěte se, že PocketBase běží na', import.meta.env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090')
+            }
+        }
+
+        checkConnection()
+        const interval = setInterval(checkConnection, 5000) // Kontrola každých 5 sekund
+
+        return () => clearInterval(interval)
+    }, [])
+
+    // Načtení jména z localStorage
+    useEffect(() => {
+        const savedName = localStorage.getItem('topic-board-username')
+        if (savedName) {
+            setUserName(savedName)
+            setShowNameInput(false)
+        }
+    }, [])
+
+    // Uložení jména
+    const handleNameSubmit = (e: React.FormEvent) => {
+        e.preventDefault()
+        if (userName.trim()) {
+            localStorage.setItem('topic-board-username', userName.trim())
+            setShowNameInput(false)
+        }
+    }
+
+    // Načtení notes při startu
+    useEffect(() => {
+        const loadNotes = async () => {
+            try {
+                const loadedNotes = await getNotes()
+                isUpdatingFromServer.current = true
+                setNotes(loadedNotes)
+                isUpdatingFromServer.current = false
+            } catch (error) {
+                console.error('Chyba při načítání notes:', error)
+            }
+        }
+
+        if (!showNameInput) {
+            loadNotes()
+        }
+    }, [showNameInput])
+
+    // Real-time subscription pro změny od ostatních uživatelů
+    useEffect(() => {
+        if (showNameInput) return
+
+        const unsubscribe = subscribeToNotes((action, record) => {
+            isUpdatingFromServer.current = true
+
+            if (action === 'create' || action === 'update') {
+                const note = recordToNote(record as NoteRecord)
+                setNotes(prevNotes => {
+                    const existingIndex = prevNotes.findIndex(n => n.id === note.id)
+                    if (existingIndex >= 0) {
+                        // Update existing
+                        const updated = [...prevNotes]
+                        updated[existingIndex] = note
+                        return updated
+                    } else {
+                        // Add new
+                        return [...prevNotes, note]
+                    }
+                })
+            } else if (action === 'delete') {
+                setNotes(prevNotes => prevNotes.filter(n => n.id !== record.id))
+            }
+
+            isUpdatingFromServer.current = false
+        })
+
+        return () => {
+            unsubscribe.then(unsub => unsub())
+        }
+    }, [showNameInput])
+
+    const addNote = async () => {
+        if (isUpdatingFromServer.current) return
+
+        const newNote: Omit<StickyNote, 'id' | 'createdAt'> = {
+            text: '',
+            color: COLORS[Math.floor(Math.random() * COLORS.length)],
+            x: Math.random() * (window.innerWidth - 330) + 50,
+            y: Math.random() * (window.innerHeight - 300) + 50,
+            comments: [],
+            authorName: userName || 'Anonymní',
+        }
+
+        try {
+            const created = await createNote(newNote)
+            // Real-time subscription automaticky přidá note, ale přidáme lokálně pro rychlost
+            setNotes(prev => [...prev, created])
+        } catch (error) {
+            console.error('Chyba při vytváření note:', error)
+            alert(`Chyba při vytváření poznámky. Zkontrolujte, zda běží PocketBase server.\n\nChyba: ${error}`)
+        }
+    }
+
+    const updateNote = async (id: string, updates: Partial<StickyNote>) => {
+        if (isUpdatingFromServer.current) return
+
+        // Optimistic update (lokální změna pro rychlost)
+        setNotes(prevNotes =>
+            prevNotes.map(note =>
+                note.id === id ? { ...note, ...updates } : note
+            )
+        )
+
+        try {
+            await updateNoteAPI(id, updates)
+            // Real-time subscription automaticky aktualizuje, ale lokální změna je už provedena
+        } catch (error) {
+            console.error('Chyba při aktualizaci note:', error)
+            // Pokud selže, načteme znovu z serveru
+            const loadedNotes = await getNotes()
+            setNotes(loadedNotes)
+        }
+    }
+
+    const deleteNote = async (id: string) => {
+        if (isUpdatingFromServer.current) return
+
+        // Optimistic delete
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== id))
+
+        try {
+            await deleteNoteAPI(id)
+            // Real-time subscription automaticky smaže
+        } catch (error) {
+            console.error('Chyba při mazání note:', error)
+            // Pokud selže, načteme znovu z serveru
+            const loadedNotes = await getNotes()
+            setNotes(loadedNotes)
+        }
+    }
+
+    const addComment = async (noteId: string, text: string) => {
+        if (isUpdatingFromServer.current) return
+
+        const note = notes.find(n => n.id === noteId)
+        if (!note) return
+
+        const newComment: Comment = {
+            id: Date.now().toString(),
+            text,
+            timestamp: Date.now(),
+            authorName: userName || 'Anonymní',
+        }
+
+        const updatedNote = {
+            ...note,
+            comments: [...note.comments, newComment],
+        }
+
+        await updateNote(noteId, updatedNote)
+    }
+
+    const deleteComment = async (noteId: string, commentId: string) => {
+        if (isUpdatingFromServer.current) return
+
+        const note = notes.find(n => n.id === noteId)
+        if (!note) return
+
+        const updatedNote = {
+            ...note,
+            comments: note.comments.filter(c => c.id !== commentId),
+        }
+
+        await updateNote(noteId, updatedNote)
+    }
+
+    if (showNameInput) {
+        return (
+            <div className="app">
+                <div className="name-input-overlay">
+                    <div className="name-input-container">
+                        <h2>Vítejte v Topic Board! 👋</h2>
+                        <p>Zadejte své jméno pro spolupráci:</p>
+                        <form onSubmit={handleNameSubmit}>
+                            <input
+                                type="text"
+                                value={userName}
+                                onChange={(e) => setUserName(e.target.value)}
+                                placeholder="Vaše jméno..."
+                                className="name-input"
+                                autoFocus
+                                maxLength={20}
+                            />
+                            <button type="submit" className="name-submit-btn" disabled={!userName.trim()}>
+                                Pokračovat
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="app">
+            <header className="app-header">
+                <div className="header-left">
+                    <h1>📌 Topic Board</h1>
+                    <div className="connection-status">
+                        {isConnected && (
+                            <>
+                                <span className="status-dot connected"></span>
+                                <span className="status-text">Připojeno</span>
+                            </>
+                        )}
+                        {userName && (
+                            <span className="user-name">👤 {userName}</span>
+                        )}
+                    </div>
+                </div>
+                <button className="add-note-btn" onClick={addNote}>
+                    + Přidat poznámku
+                </button>
+            </header>
+            <Board
+                notes={notes}
+                onUpdateNote={updateNote}
+                onDeleteNote={deleteNote}
+                onAddComment={addComment}
+                onDeleteComment={deleteComment}
+            />
+        </div>
+    )
+}
+
+export default App
+

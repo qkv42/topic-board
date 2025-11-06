@@ -58,11 +58,16 @@ export default function StickyNote({
     }, [note.id, editingNoteIds])
     
     // Aktualizace stableNoteRef pouze když needitujeme
+    // DŮLEŽITÉ: Aktualizujeme i když přijde update ze serveru po uložení
     useEffect(() => {
         if (!isEditingRef.current && lastNoteIdRef.current === note.id) {
             stableNoteRef.current = note
+            // Pokud needitujeme a text se změnil, synchronizujeme i localText
+            if (localText !== note.text && !ignoreServerUpdatesRef.current) {
+                setLocalText(note.text)
+            }
         }
-    }, [note, note.id])
+    }, [note, note.id, localText])
 
     // Cleanup při unmount
     useEffect(() => {
@@ -198,25 +203,24 @@ export default function StickyNote({
         }
         
         // Uložíme finální hodnotu na server
-        const finalText = localText
-        ignoreServerUpdatesRef.current = false
+        const finalText = localText.trim()
+        
+        // Aktualizujeme stableNoteRef s finálním textem, aby se zobrazil správně
+        stableNoteRef.current = { ...note, text: finalText }
         
         // Nejprve odstraníme ze setu, aby se mohla synchronizovat
         editingNoteIds.current.delete(note.id)
         
-        // Uložíme změnu
+        // Uložíme změnu na server
         onUpdate(note.id, { text: finalText })
         
-        // Počkáme krátce, než zavřeme editaci
-        setTimeout(() => {
-            isEditingRef.current = false
-            setIsEditing(false)
-            ignoreServerUpdatesRef.current = false
-            // Synchronizujeme s tím, co přišlo ze serveru (pokud se něco změnilo)
-            if (!editingNoteIds.current.has(note.id)) {
-                setLocalText(note.text)
-            }
-        }, 150)
+        // Okamžitě zavřeme editaci a povolíme synchronizaci
+        isEditingRef.current = false
+        setIsEditing(false)
+        ignoreServerUpdatesRef.current = false
+        
+        // Nastavíme localText na finální hodnotu (bude se synchronizovat se serverem)
+        setLocalText(finalText)
     }
 
     const handleTextFocus = (e: React.FocusEvent<HTMLTextAreaElement>) => {
@@ -336,8 +340,8 @@ export default function StickyNote({
                         }}
                     />
                 ) : (
-                    <div className={`note-text ${stableNoteRef.current.text.trim() === '' ? 'note-text-empty' : ''}`}>
-                        {stableNoteRef.current.text.trim() === '' ? 'Nová poznámka...' : stableNoteRef.current.text}
+                    <div className={`note-text ${note.text.trim() === '' ? 'note-text-empty' : ''}`}>
+                        {note.text.trim() === '' ? 'Nová poznámka...' : note.text}
                     </div>
                 )}
             </div>

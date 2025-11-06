@@ -6,7 +6,7 @@
 }
 
 .app-header {
-    background: rgba(255, 255, 255, 0.95);
+    background: white;
     padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
@@ -56,7 +56,7 @@
 }
 
 .user-name {
-    color: #667eea;
+    color: #A03D52;
     font-weight: 500;
     margin-left: 0.5rem;
 }
@@ -67,7 +67,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background:
+        url('/images/cork_board.jpg') center center / cover no-repeat fixed,
+        linear-gradient(135deg, rgba(139, 111, 71, 0.1) 0%, rgba(120, 90, 60, 0.05) 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -113,11 +115,11 @@
 
 .name-input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #A03D52;
 }
 
 .name-submit-btn {
-    background: #667eea;
+    background: #A03D52;
     color: white;
     border: none;
     padding: 0.75rem 1.5rem;
@@ -129,7 +131,7 @@
 }
 
 .name-submit-btn:hover:not(:disabled) {
-    background: #5568d3;
+    background: #8B2E42;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
@@ -163,7 +165,7 @@
 }
 
 .add-note-btn {
-    background: #667eea;
+    background: #A03D52;
     color: white;
     border: none;
     padding: 0.75rem 1.5rem;
@@ -176,7 +178,7 @@
 }
 
 .add-note-btn:hover {
-    background: #5568d3;
+    background: #8B2E42;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }

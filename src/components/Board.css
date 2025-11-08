@@ -1,9 +1,32 @@
 .board {
     flex: 1;
     position: relative;
-    overflow: auto;
+    overflow: hidden;
     width: 100%;
     height: 100%;
     min-height: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    user-select: none;
+    /* Board container má velikost viewportu, inner board má efektivní velikost */
+    /* Na menším monitoru se board škáluje pomocí transform: scale */
+    /* Bílé pozadí se přidá dynamicky jen když je board větší než viewport (na větším monitoru) */
 }
 
+/* Když je board zarovnaný na střed (větší monitor), zarovnáme i kontejner */
+.board[style*="background-color: white"] {
+    align-items: center;
+    justify-content: center;
+}
+
+.board-inner {
+    background-image:
+        url('/images/cork_board.jpg'),
+        linear-gradient(135deg, rgba(139, 111, 71, 0.1) 0%, rgba(120, 90, 60, 0.05) 100%);
+    background-position: 0 0, center center;
+    background-size: cover, auto;
+    background-repeat: no-repeat, no-repeat;
+    /* Korkové pozadí - použijeme cover aby pokrylo celý board bez opakování */
+    /* Transform scale ovlivní i pozadí, ale cover zajistí správné pokrytí */
+}

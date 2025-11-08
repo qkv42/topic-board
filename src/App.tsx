@@ -38,6 +38,13 @@ const COLORS = [
     '#87CEEB', // světle modrá 2
 ]
 
+// Referenční velikost boardu - minimální velikost pro umístění poznámek
+// Pokud je viewport větší, použije se viewport velikost
+const BOARD_WIDTH = 1920
+const BOARD_HEIGHT = 1080
+const NOTE_WIDTH = 280
+const NOTE_HEIGHT = 200
+
 // Společné heslo pro přístup k boardu (z environment variable)
 const BOARD_PASSWORD = import.meta.env.VITE_BOARD_PASSWORD || ''
 
@@ -51,6 +58,7 @@ function App() {
     // Firebase je vždy připojený - není potřeba kontrolovat stav
     const isUpdatingFromServer = useRef(false)
     const editingNoteIds = useRef<Set<string>>(new Set())
+    const boardRef = useRef<HTMLDivElement>(null)
 
     // Načtení autentizace a jména z localStorage
     useEffect(() => {
@@ -105,6 +113,32 @@ function App() {
         }
     }
 
+    // Funkce pro normalizaci pozice poznámky - zajistí, že pozice je v rámci BOARD rozměrů
+    // Poznámka: skutečná normalizace se provádí v Board.tsx s ohledem na efektivní velikost
+    // Tato funkce pouze převede procenta na pixely a omezí na minimální BOARD rozměry
+    const normalizeNotePosition = (note: StickyNote): StickyNote => {
+        // Pokud je pozice v procentech (0-100), převedeme na pixely v rámci BOARD
+        let x = note.x
+        let y = note.y
+        
+        if (x <= 100 && y <= 100) {
+            // Je to v procentech, převedeme na pixely
+            x = (x / 100) * BOARD_WIDTH
+            y = (y / 100) * BOARD_HEIGHT
+        }
+        
+        // NEOmezujeme na hranice BOARD - necháme Board.tsx, aby to udělal s ohledem na efektivní velikost
+        // Pouze zajistíme, že pozice není záporná
+        x = Math.max(0, x)
+        y = Math.max(0, y)
+        
+        return {
+            ...note,
+            x,
+            y,
+        }
+    }
+
     // Real-time subscription pro změny
     useEffect(() => {
         if (showNameInput) return
@@ -122,7 +156,8 @@ function App() {
                             return prevNote // Vrátíme celou původní poznámku, ne jen text
                         }
                     }
-                    return newNote
+                    // Normalizujeme pozici poznámky, aby byla v rámci MAX_BOARD rozměrů
+                    return normalizeNotePosition(newNote)
                 })
                 return updatedNotes
             })
@@ -138,11 +173,39 @@ function App() {
     const addNote = async () => {
         if (isUpdatingFromServer.current) return
 
+        // Získáme board element a jeho aktuální viewport
+        const boardElement = boardRef.current
+        if (!boardElement) return
+        
+        // Umístíme poznámku v rámci boardu (efektivní velikost - může být větší než viewport)
+        const boardRect = boardElement.getBoundingClientRect()
+        const viewportWidth = boardRect.width
+        const viewportHeight = boardRect.height
+        
+        // Efektivní velikost boardu - použijeme větší z viewport nebo BOARD rozměrů
+        const effectiveWidth = Math.max(viewportWidth, BOARD_WIDTH)
+        const effectiveHeight = Math.max(viewportHeight, BOARD_HEIGHT)
+        
+        // Pozice v rámci boardu (ne jen viewportu)
+        const maxX = effectiveWidth - NOTE_WIDTH - 50
+        const maxY = effectiveHeight - NOTE_HEIGHT - 50
+        
+        // Umístíme poznámku v rámci viewportu, ale omezíme na efektivní BOARD rozměry
+        const xInPixels = Math.min(
+            Math.random() * Math.max(maxX - 50, 50) + 50,
+            effectiveWidth - NOTE_WIDTH - 50
+        )
+        const yInPixels = Math.min(
+            Math.random() * Math.max(maxY - 50, 50) + 50,
+            effectiveHeight - NOTE_HEIGHT - 50
+        )
+        
+        // Uložíme jako pixely - pozice je v rámci efektivní velikosti boardu
         const newNote: Omit<StickyNote, 'id' | 'createdAt'> = {
             text: '',
             color: COLORS[Math.floor(Math.random() * COLORS.length)],
-            x: Math.random() * (window.innerWidth - 330) + 50,
-            y: Math.random() * (window.innerHeight - 300) + 50,
+            x: Math.max(50, xInPixels),
+            y: Math.max(50, yInPixels),
             comments: [],
             authorName: userName || 'Anonymní',
         }
@@ -163,6 +226,7 @@ function App() {
         // Optimistic update (lokální změna pro rychlost) - ale ne pro text, protože má vlastní lokální state
         const hasTextUpdate = 'text' in updates
         if (!hasTextUpdate) {
+            // Pro pozice (x, y) vždy použijeme optimistic update
             setNotes(prevNotes =>
                 prevNotes.map(note =>
                     note.id === id ? { ...note, ...updates } : note
@@ -320,6 +384,7 @@ function App() {
                     </button>
             </header>
             <Board
+                ref={boardRef}
                 notes={notes}
                 onUpdateNote={updateNote}
                 onDeleteNote={deleteNote}

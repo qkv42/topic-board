@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { StickyNote as StickyNoteType } from '../App'
 import './StickyNote.css'
 
@@ -14,6 +14,10 @@ interface StickyNoteProps {
     onAddComment: (noteId: string, text: string) => void
     onDeleteComment: (noteId: string, commentId: string) => void
     editingNoteIds: React.MutableRefObject<Set<string>>
+    boardWidth?: number
+    boardHeight?: number
+    scale?: number
+    boardInnerRef?: React.MutableRefObject<HTMLDivElement | null>
 }
 
 export default function StickyNote({
@@ -23,13 +27,20 @@ export default function StickyNote({
     onAddComment,
     onDeleteComment,
     editingNoteIds,
+    boardWidth,
+    boardHeight,
+    scale = 1,
+    boardInnerRef,
 }: StickyNoteProps) {
     const [isDragging, setIsDragging] = useState(false)
+    const isDraggingRef = useRef(false)
     const [isEditing, setIsEditing] = useState(false)
     const [localText, setLocalText] = useState(note.text)
     const [showComments, setShowComments] = useState(false)
     const [newComment, setNewComment] = useState('')
     const [showColorPicker, setShowColorPicker] = useState(false)
+    const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null)
+    const dragPositionRef = useRef<{ x: number; y: number } | null>(null)
     const noteRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const dragOffset = useRef({ x: 0, y: 0 })
@@ -39,8 +50,8 @@ export default function StickyNote({
     const ignoreServerUpdatesRef = useRef(false)
     const stableNoteRef = useRef(note) // Stabilní reference na note během editace
 
-    // Reset při změně note.id
-    useEffect(() => {
+    // Reset při změně note.id - OKAMŽITĚ pomocí useLayoutEffect (synchronně před renderem)
+    useLayoutEffect(() => {
         if (lastNoteIdRef.current !== note.id) {
             // Odstraníme starou poznámku ze setu
             editingNoteIds.current.delete(lastNoteIdRef.current)
@@ -50,13 +61,35 @@ export default function StickyNote({
             ignoreServerUpdatesRef.current = false
             stableNoteRef.current = note
             setLocalText(note.text)
+            // Reset dragPosition při změně note.id - OKAMŽITĚ (synchronně před renderem)
+            // DŮLEŽITÉ: Resetujeme i když se note.id změnil, aby se "kopie" nezobrazovala
+            setDragPosition(null)
+            dragPositionRef.current = null
+            setIsDragging(false)
+            isDraggingRef.current = false
+            dragOffset.current = { x: 0, y: 0 }
             if (updateTimeoutRef.current) {
                 clearTimeout(updateTimeoutRef.current)
                 updateTimeoutRef.current = null
             }
         }
     }, [note.id, editingNoteIds])
-    
+
+    // Reset dragPosition po optimistic update - sledujeme změnu pozice
+    useEffect(() => {
+        // Pokud nedragujeme a dragPosition existuje a note.id je stejné
+        if (!isDraggingRef.current && dragPosition && lastNoteIdRef.current === note.id) {
+            // Zkontrolujeme, jestli se pozice změnila (optimistic update proběhl)
+            const xDiff = Math.abs(note.x - dragPosition.x)
+            const yDiff = Math.abs(note.y - dragPosition.y)
+            // Pokud je pozice stejná (s tolerancí 1px), resetujeme dragPosition
+            if (xDiff < 1 && yDiff < 1) {
+                setDragPosition(null)
+                dragPositionRef.current = null
+            }
+        }
+    }, [note.x, note.y, isDragging, dragPosition, note.id])
+
     // Aktualizace stableNoteRef pouze když needitujeme
     // DŮLEŽITÉ: Aktualizujeme i když přijde update ze serveru po uložení
     useEffect(() => {
@@ -68,6 +101,22 @@ export default function StickyNote({
             }
         }
     }, [note, note.id, localText])
+
+    // Reset dragPosition po optimistic update - sledujeme změnu pozice
+    // Pouze pokud nedragujeme a note.id se nezměnil
+    useEffect(() => {
+        // Pokud nedragujeme a dragPosition existuje a note.id je stejné
+        if (!isDragging && dragPosition && lastNoteIdRef.current === note.id) {
+            // Zkontrolujeme, jestli se pozice změnila (optimistic update proběhl)
+            const xDiff = Math.abs(note.x - dragPosition.x)
+            const yDiff = Math.abs(note.y - dragPosition.y)
+            // Pokud je pozice stejná (s tolerancí 1px), resetujeme dragPosition
+            if (xDiff < 1 && yDiff < 1) {
+                setDragPosition(null)
+                dragPositionRef.current = null
+            }
+        }
+    }, [note.x, note.y, isDragging, dragPosition, note.id])
 
     // Cleanup při unmount
     useEffect(() => {
@@ -86,7 +135,7 @@ export default function StickyNote({
         if (isEditingRef.current || ignoreServerUpdatesRef.current || lastNoteIdRef.current !== note.id) {
             return
         }
-        
+
         // Pouze pokud se text skutečně změnil (ne z našich vlastních změn)
         // A pokud nový text není prázdný (aby se nepřepsal text, který uživatel napsal)
         if (localText !== note.text && note.text.trim() !== '' && !editingNoteIds.current.has(note.id)) {
@@ -113,58 +162,162 @@ export default function StickyNote({
     }, [])
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('.note-content, .note-footer, .comment-section')) {
+        // Zabraňme dragování při kliknutí na tlačítka, textarea, nebo komentáře
+        if ((e.target as HTMLElement).closest('.note-content, .note-footer, .comment-section, .delete-btn, .color-picker-btn, .color-picker, .comment-toggle-btn')) {
             return
         }
 
-        // Najdeme board container
-        const boardElement = (e.currentTarget as HTMLElement).closest('.board') as HTMLElement
-        if (!boardElement) return
+        // Zabraňme označování textu při dragování
+        e.preventDefault()
 
-        // Získáme pozici boardu a scroll pozici
-        const boardRect = boardElement.getBoundingClientRect()
-        const scrollLeft = boardElement.scrollLeft
-        const scrollTop = boardElement.scrollTop
+        // Použijeme board inner ref, pokud je k dispozici
+        const boardInner = boardInnerRef?.current || (e.currentTarget as HTMLElement).closest('.board-inner') as HTMLElement
+        if (!boardInner) return
+
+        // Získáme pozici board inner elementu (v viewport souřadnicích, po scale transformaci)
+        const boardInnerRect = boardInner.getBoundingClientRect()
+
+        // Použijeme pozici poznámky z note.x/y (v souřadnicích boardu 1920x1080)
+        // Tato pozice je nezávislá na scale transformaci
+        const currentX = note.x
+        const currentY = note.y
+
+        // Reset dragPosition před začátkem nového dragování
+        setDragPosition(null)
+        dragPositionRef.current = null
 
         setIsDragging(true)
-        // Uložíme offset mezi kurzorem a pozicí note v momentě chycení (relativně k boardu)
+        isDraggingRef.current = true
+
+        // Pozice kurzoru relativně k board inner elementu (v viewport souřadnicích, po scale)
+        // getBoundingClientRect() vrací pozici a velikost PO transformaci
+        const cursorXRelative = e.clientX - boardInnerRect.left
+        const cursorYRelative = e.clientY - boardInnerRect.top
+
+        // Přepočítáme na board souřadnice
+        // boardInnerRect.width je nyní effectiveBoardWidth * scale (CSS transform: scale)
+        // Když je scale < 1, můžeme použít jednodušší výpočet: cursorXRelative / scale
+        // Protože boardInnerRect.width = effectiveBoardWidth * scale
+        // Takže (cursorXRelative / (effectiveBoardWidth * scale)) * effectiveBoardWidth = cursorXRelative / scale
+        const currentBoardWidth = boardWidth || 1920
+        const currentBoardHeight = boardHeight || 1080
+
+        const cursorXInBoard = scale < 1
+            ? cursorXRelative / scale
+            : (cursorXRelative / boardInnerRect.width) * currentBoardWidth
+        const cursorYInBoard = scale < 1
+            ? cursorYRelative / scale
+            : (cursorYRelative / boardInnerRect.height) * currentBoardHeight
+
+        // Offset = pozice kurzoru - pozice note (v souřadnicích boardu)
         dragOffset.current = {
-            x: e.clientX - boardRect.left - note.x + scrollLeft,
-            y: e.clientY - boardRect.top - note.y + scrollTop,
+            x: cursorXInBoard - currentX,
+            y: cursorYInBoard - currentY,
         }
     }
 
     useEffect(() => {
+        let animationFrameId: number | null = null
+
         const handleMouseMove = (e: MouseEvent) => {
             if (!isDragging) return
 
-            // Najdeme board container (rodič s třídou .board)
-            const boardElement = noteRef.current?.closest('.board') as HTMLElement
-            if (!boardElement) return
+            // Použijeme requestAnimationFrame pro plynulejší drag and drop
+            if (animationFrameId !== null) {
+                cancelAnimationFrame(animationFrameId)
+            }
 
-            // Získáme pozici boardu a scroll pozici
-            const boardRect = boardElement.getBoundingClientRect()
-            const scrollLeft = boardElement.scrollLeft
-            const scrollTop = boardElement.scrollTop
+            animationFrameId = requestAnimationFrame(() => {
+                if (!isDraggingRef.current) return
 
-            // Nová pozice relativně k boardu (včetně scroll pozice)
-            const newX = e.clientX - boardRect.left - dragOffset.current.x + scrollLeft
-            const newY = e.clientY - boardRect.top - dragOffset.current.y + scrollTop
+                // Použijeme board inner ref, pokud je k dispozici
+                const boardInner = boardInnerRef?.current || noteRef.current?.closest('.board-inner') as HTMLElement
+                if (!boardInner) return
 
-            // Omezení na hranice boardu (včetně scrollované oblasti)
-            const boardWidth = Math.max(boardElement.scrollWidth, boardElement.clientWidth)
-            const boardHeight = Math.max(boardElement.scrollHeight, boardElement.clientHeight)
-            const noteWidth = noteRef.current?.offsetWidth || 280
-            const noteHeight = noteRef.current?.offsetHeight || 200
+                // Získáme pozici board inner elementu (v viewport souřadnicích, po scale transformaci)
+                const boardInnerRect = boardInner.getBoundingClientRect()
 
-            onUpdate(note.id, {
-                x: Math.max(0, Math.min(newX, boardWidth - noteWidth)),
-                y: Math.max(0, Math.min(newY, boardHeight - noteHeight)),
+                // Pozice kurzoru relativně k board inner elementu (v viewport souřadnicích, po scale)
+                // getBoundingClientRect() vrací pozici a velikost PO transformaci
+                let cursorXRelative = e.clientX - boardInnerRect.left
+                let cursorYRelative = e.clientY - boardInnerRect.top
+
+                // Omezíme cursorXRelative/Y na minimum 0 (aby nebyly záporné)
+                // NEOmezujeme na maximum - když je scale < 1, kurzor může být i mimo boardInnerRect
+                // ale stále v rámci viewportu, a my chceme umožnit posouvat až k pravému kraji boardu
+                cursorXRelative = Math.max(0, cursorXRelative)
+                cursorYRelative = Math.max(0, cursorYRelative)
+
+                // Přepočítáme na board souřadnice
+                // boardInnerRect.width je nyní effectiveBoardWidth * scale (CSS transform: scale)
+                // Když je scale < 1, můžeme použít jednodušší výpočet: cursorXRelative / scale
+                // Protože boardInnerRect.width = effectiveBoardWidth * scale
+                // Takže (cursorXRelative / (effectiveBoardWidth * scale)) * effectiveBoardWidth = cursorXRelative / scale
+                const effectiveBoardWidth = boardWidth || 1920
+                const effectiveBoardHeight = boardHeight || 1080
+
+                // Když je scale < 1, použijeme cursorXRelative / scale
+                // Ale omezíme na effectiveBoardWidth, aby poznámky nešly mimo board
+                const cursorXInBoard = scale < 1
+                    ? Math.min(cursorXRelative / scale, effectiveBoardWidth)
+                    : (cursorXRelative / boardInnerRect.width) * effectiveBoardWidth
+                const cursorYInBoard = scale < 1
+                    ? Math.min(cursorYRelative / scale, effectiveBoardHeight)
+                    : (cursorYRelative / boardInnerRect.height) * effectiveBoardHeight
+
+                // Nová pozice = pozice kurzoru - offset (v souřadnicích boardu)
+                const newX = cursorXInBoard - dragOffset.current.x
+                const newY = cursorYInBoard - dragOffset.current.y
+
+                // Omezení na hranice boardu - poznámky se mohou posouvat v rámci celého boardu
+                // Použijeme efektivní BOARD rozměry (mohou být větší než viewport)
+                // POZOR: offsetWidth/Height jsou škálované, takže je musíme vydělit scale
+                const noteWidthScaled = noteRef.current?.offsetWidth || 280
+                const noteHeightScaled = noteRef.current?.offsetHeight || 200
+                const noteWidth = scale < 1 ? noteWidthScaled / scale : noteWidthScaled
+                const noteHeight = scale < 1 ? noteHeightScaled / scale : noteHeightScaled
+
+                // boardWidth a boardHeight jsou efektivní rozměry boardu (mohou být větší než viewport)
+                const currentBoardWidth = boardWidth || 1920
+                const currentBoardHeight = boardHeight || 1080
+
+                // Vypočítáme maximální pozice - poznámka musí být celá viditelná v rámci boardu
+                // Poznámka může být až na pozici, kde její pravý/dolní okraj je na hranici boardu
+                const maxX = currentBoardWidth - noteWidth
+                const maxY = currentBoardHeight - noteHeight
+
+                // Omezíme pozici na hranice boardu (minimálně 0, maximálně maxX/Y)
+                const clampedX = Math.max(0, Math.min(newX, maxX))
+                const clampedY = Math.max(0, Math.min(newY, maxY))
+
+
+
+                // Použijeme lokální state pro pozici během dragování (neukládáme na server)
+                const newPos = { x: clampedX, y: clampedY }
+                setDragPosition(newPos)
+                dragPositionRef.current = newPos
             })
         }
 
         const handleMouseUp = () => {
+            const finalPos = dragPositionRef.current
+
             setIsDragging(false)
+            isDraggingRef.current = false
+
+            // Při ukončení dragování uložíme finální pozici
+            if (finalPos) {
+                // Uložíme pozici přímo jako pixely - board má efektivní velikost (může být větší než 1920x1080)
+                onUpdate(note.id, {
+                    x: finalPos.x,
+                    y: finalPos.y,
+                })
+                // dragPosition se resetuje automaticky v useEffect, když se note.x/y aktualizuje
+            } else {
+                // Pokud není finalPos, resetujeme hned
+                setDragPosition(null)
+                dragPositionRef.current = null
+            }
         }
 
         if (isDragging) {
@@ -175,13 +328,16 @@ export default function StickyNote({
         return () => {
             document.removeEventListener('mousemove', handleMouseMove)
             document.removeEventListener('mouseup', handleMouseUp)
+            if (animationFrameId !== null) {
+                cancelAnimationFrame(animationFrameId)
+            }
         }
-    }, [isDragging, note.id, onUpdate])
+    }, [isDragging, note.id, onUpdate, boardWidth, boardHeight, scale, boardInnerRef])
 
     const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const newText = e.target.value
         setLocalText(newText)
-        
+
         // Ujistíme se, že jsme v editaci a ignorujeme server updates
         if (!isEditingRef.current) {
             isEditingRef.current = true
@@ -190,7 +346,7 @@ export default function StickyNote({
             editingNoteIds.current.add(note.id) // Přidáme do setu editovaných poznámek
             stableNoteRef.current = note // Uložíme stabilní referenci
         }
-        
+
         // NEPOSÍLÁME změny na server během psaní - pouze při blur
         // To eliminuje konflikty mezi lokálním stavem a updates ze serveru
     }
@@ -201,24 +357,24 @@ export default function StickyNote({
             clearTimeout(updateTimeoutRef.current)
             updateTimeoutRef.current = null
         }
-        
+
         // Uložíme finální hodnotu na server
         const finalText = localText.trim()
-        
+
         // Aktualizujeme stableNoteRef s finálním textem, aby se zobrazil správně
         stableNoteRef.current = { ...note, text: finalText }
-        
+
         // Nejprve odstraníme ze setu, aby se mohla synchronizovat
         editingNoteIds.current.delete(note.id)
-        
+
         // Uložíme změnu na server
         onUpdate(note.id, { text: finalText })
-        
+
         // Okamžitě zavřeme editaci a povolíme synchronizaci
         isEditingRef.current = false
         setIsEditing(false)
         ignoreServerUpdatesRef.current = false
-        
+
         // Nastavíme localText na finální hodnotu (bude se synchronizovat se serverem)
         setLocalText(finalText)
     }
@@ -262,13 +418,18 @@ export default function StickyNote({
         })
     }
 
+    // Použijeme dragPosition pouze pokud dragujeme, jinak note.x/y
+    // Tím zajistíme, že se "kopie" nezobrazí - pokud nedragujeme, použijeme vždy note.x/y
+    const displayX = (isDragging && dragPosition) ? dragPosition.x : note.x
+    const displayY = (isDragging && dragPosition) ? dragPosition.y : note.y
+
     return (
         <div
             ref={noteRef}
             className={`sticky-note ${isDragging ? 'dragging' : ''}`}
             style={{
-                left: `${note.x}px`,
-                top: `${note.y}px`,
+                left: `${displayX}px`,
+                top: `${displayY}px`,
                 backgroundColor: note.color,
             }}
             onMouseDown={handleMouseDown}
@@ -301,7 +462,13 @@ export default function StickyNote({
                 )}
                 <button
                     className="delete-btn"
-                    onClick={() => onDelete(note.id)}
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(note.id)
+                    }}
+                    onMouseDown={(e) => {
+                        e.stopPropagation()
+                    }}
                     title="Smazat"
                 >
                     ×
@@ -361,23 +528,23 @@ export default function StickyNote({
                         {note.comments.length === 0 ? (
                             <div className="no-comments">Zatím žádné komentáře</div>
                         ) : (
-              note.comments.map(comment => (
-                <div key={comment.id} className="comment">
-                  <div className="comment-header">
-                    <span className="comment-author">👤 {comment.authorName || 'Anonymní'}</span>
-                    <span className="comment-date">{formatDate(comment.timestamp)}</span>
-                  </div>
-                  <div className="comment-text">{comment.text}</div>
-                  <div className="comment-footer">
-                    <button
-                      className="delete-comment-btn"
-                      onClick={() => onDeleteComment(note.id, comment.id)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-              ))
+                            note.comments.map(comment => (
+                                <div key={comment.id} className="comment">
+                                    <div className="comment-header">
+                                        <span className="comment-author">👤 {comment.authorName || 'Anonymní'}</span>
+                                        <span className="comment-date">{formatDate(comment.timestamp)}</span>
+                                    </div>
+                                    <div className="comment-text">{comment.text}</div>
+                                    <div className="comment-footer">
+                                        <button
+                                            className="delete-comment-btn"
+                                            onClick={() => onDeleteComment(note.id, comment.id)}
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
                         )}
                     </div>
                     <form onSubmit={handleCommentSubmit} className="comment-form">

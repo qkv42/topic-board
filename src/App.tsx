@@ -55,6 +55,7 @@ function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false)
     const [showNameInput, setShowNameInput] = useState(true)
     const [passwordError, setPasswordError] = useState<string>('')
+    const [showGuidelines, setShowGuidelines] = useState(false)
     // Firebase je vždy připojený - není potřeba kontrolovat stav
     const isUpdatingFromServer = useRef(false)
     const editingNoteIds = useRef<Set<string>>(new Set())
@@ -359,9 +360,9 @@ function App() {
         )
     }
 
-    return (
-        <div className="app">
-            <header className="app-header">
+        return (
+            <div className="app">
+                <header className="app-header">
                     <div className="header-left">
                         <h1>📌 Topic Board</h1>
                         <div className="connection-status">
@@ -370,8 +371,15 @@ function App() {
                             {userName && (
                                 <span className="user-name">👤 {userName}</span>
                             )}
-                            <button 
-                                className="logout-btn" 
+                            <button
+                                className="guidelines-btn"
+                                onClick={() => setShowGuidelines(!showGuidelines)}
+                                title="Zásady bezpečné komunikace"
+                            >
+                                💬
+                            </button>
+                            <button
+                                className="logout-btn"
                                 onClick={handleLogout}
                                 title="Odhlásit se"
                             >
@@ -382,7 +390,61 @@ function App() {
                     <button className="add-note-btn" onClick={addNote}>
                         + Přidat poznámku
                     </button>
-            </header>
+                </header>
+                {showGuidelines && (
+                    <div className="guidelines-overlay" onClick={() => setShowGuidelines(false)}>
+                        <div className="guidelines-content" onClick={(e) => e.stopPropagation()}>
+                            <div className="guidelines-header">
+                                <h2>Zásady bezpečné komunikace ve vztahu</h2>
+                                <button
+                                    className="guidelines-close"
+                                    onClick={() => setShowGuidelines(false)}
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            <div className="guidelines-body">
+                                <section className="guidelines-section">
+                                    <h3>🤝 Přístup: Jsme tým</h3>
+                                    <ul>
+                                        <li>Proti problému, ne proti sobě. Hledáme řešení, ne viníka.</li>
+                                        <li>Cílem je pochopení, ne výhra.</li>
+                                        <li>Respekt je na prvním místě. I když jsme naštvaní.</li>
+                                    </ul>
+                                </section>
+                                
+                                <section className="guidelines-section">
+                                    <h3>🗣️ Jak mluvit (můj prožitek)</h3>
+                                    <ul>
+                                        <li>Mluvte v "Já" formě. Místo "Ty jsi mě naštval" řekněte "Já se cítím naštvaně, když...".</li>
+                                        <li>Popisujte, nehodnoťte. Místo "To bylo hloupé" řekněte "Tomu nerozumím".</li>
+                                        <li>Držte se jednoho tématu. Nevytahujte staré křivdy.</li>
+                                        <li>Žádné urážky ani křik. Neříkejte nic, čeho budete litovat.</li>
+                                    </ul>
+                                </section>
+                                
+                                <section className="guidelines-section">
+                                    <h3>👂 Jak naslouchat (tvůj prožitek)</h3>
+                                    <ul>
+                                        <li>Neskákejte do řeči. Nechte druhého domluvit.</li>
+                                        <li>Poslouchejte, abyste pochopili, ne abyste jen odpověděli.</li>
+                                        <li>Ověřujte si porozumění. "Slyším správně, že ti vadí...?"</li>
+                                        <li>Doptávejte se s opravdovým zájmem. "Můžeš mi o tom říct víc?"</li>
+                                    </ul>
+                                </section>
+                                
+                                <section className="guidelines-section">
+                                    <h3>🛡️ Jak udržet bezpečí</h3>
+                                    <ul>
+                                        <li>Neshazujte pocity druhého. I když to vidíte jinak, neříkejte "To přeháníš".</li>
+                                        <li>Neodpojujte se. Zůstaňte přítomní (žádné tiché domácnosti nebo ignorování).</li>
+                                        <li>Dejte si pauzu, když je to moc. Je v pořádku říct: "Potřebuju 10 minut na uklidnění. Vrátíme se k tomu."</li>
+                                    </ul>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
+                )}
             <Board
                 ref={boardRef}
                 notes={notes}
